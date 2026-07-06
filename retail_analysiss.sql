@@ -1,0 +1,297 @@
+create database retail_analysis
+use retail_analysis
+drop table categories
+select * from cleaned_categories
+select * from cleaned_brands
+select * from cleaned_customers
+select * from cleaned_order_items
+select * from cleaned_staffs
+select * from cleaned_stocks
+select * from cleaned_products
+select * from cleaned_stores
+select * from cleaned_orders
+select * from orders
+
+LOAD DATA LOCAL INFILE 'C:/Users/HP/Desktop/cleaned_orders.csv'
+INTO TABLE orders
+FIELDS TERMINATED BY ','
+ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 ROWS;
+
+show tables
+
+###################   ENTITY RELATIONSHIP  #####################3
+
+#categories --->products
+ALTER TABLE cleaned_categories
+ADD PRIMARY KEY (category_id);
+
+ALTER TABLE cleaned_products
+ADD CONSTRAINT fk_products_categories
+FOREIGN KEY (category_id)
+REFERENCES cleaned_categories(category_id);
+
+#brands--->products
+ALTER TABLE cleaned_brands
+ADD PRIMARY KEY (brand_id);
+
+ALTER TABLE cleaned_products
+ADD CONSTRAINT fk_products_brands
+FOREIGN KEY (brand_id)
+REFERENCES cleaned_brands(brand_id);
+
+#customers--->orders
+ALTER TABLE cleaned_customers
+ADD PRIMARY KEY (customer_id);
+
+ALTER TABLE orders
+ADD CONSTRAINT fk_orders_customers
+FOREIGN KEY (customer_id)
+REFERENCES cleaned_customers(customer_id);
+
+#stores--->orders
+ALTER TABLE cleaned_stores
+ADD PRIMARY KEY (store_id);
+
+ALTER TABLE orders
+ADD CONSTRAINT fk_orders_stores
+FOREIGN KEY (store_id)
+REFERENCES cleaned_stores(store_id);
+
+#staffs--->orders
+ALTER TABLE cleaned_staffs
+ADD PRIMARY KEY (staff_id);
+
+ALTER TABLE orders
+ADD CONSTRAINT fk_orders_staffs
+FOREIGN KEY (staff_id)
+REFERENCES cleaned_staffs(staff_id);
+
+#order--->order_items
+ALTER TABLE cleaned_order_items
+ADD CONSTRAINT fk_orderitems_orders
+FOREIGN KEY (order_id)
+REFERENCES orders(order_id);
+
+#products--->order_items
+ALTER TABLE cleaned_products
+ADD PRIMARY KEY (product_id);
+
+ALTER TABLE cleaned_order_items
+ADD CONSTRAINT fk_orderitems_products
+FOREIGN KEY (product_id)
+REFERENCES cleaned_products(product_id);
+
+#stores--->stocks
+ALTER TABLE cleaned_stocks
+ADD CONSTRAINT fk_stocks_stores
+FOREIGN KEY (store_id)
+REFERENCES cleaned_stores(store_id);
+
+#products--->stocks
+ALTER TABLE cleaned_stocks
+ADD CONSTRAINT fk_stocks_products
+FOREIGN KEY (product_id)
+REFERENCES cleaned_products(product_id);
+
+############ VERIFY RELATIONSHIP ##############
+
+# 1.order--->customers
+SELECT o.customer_id
+FROM orders o
+LEFT JOIN cleaned_customers c
+ON o.customer_id = c.customer_id
+WHERE c.customer_id IS NULL;
+
+
+# 2.order_items--->products
+SELECT oi.product_id
+FROM cleaned_order_items oi
+LEFT JOIN cleaned_products p
+ON oi.product_id = p.product_id
+WHERE p.product_id IS NULL; 
+
+# 3.products--->categories
+SELECT p.category_id
+FROM cleaned_products p
+LEFT JOIN cleaned_categories c
+ON p.category_id = c.category_id
+WHERE c.category_id IS NULL;
+
+# 4.stocks--->stores + products
+SELECT s.store_id, s.product_id
+FROM cleaned_stocks s
+LEFT JOIN cleaned_stores st
+ON s.store_id = st.store_id
+WHERE st.store_id IS NULL;
+
+
+######### QUESTIONS ###########
+# 1. TOTAL SALES
+SELECT 
+    SUM(oi.quantity * oi.list_price) AS total_sales
+FROM cleaned_order_items oi;
+
+# 2. TOP PRODUCTS
+SELECT 
+    oi.product_id,
+    SUM(oi.quantity) AS total_units_sold
+FROM cleaned_order_items oi
+JOIN orders o ON oi.order_id = o.order_id
+GROUP BY oi.product_id
+ORDER BY total_units_sold DESC
+LIMIT 10;
+
+# 3. SALES BY STORES
+SELECT 
+    s.store_id,
+    SUM(oi.quantity * oi.list_price) AS total_sales
+FROM orders o
+JOIN cleaned_order_items oi ON o.order_id = oi.order_id
+JOIN cleaned_stores s ON o.store_id = s.store_id
+GROUP BY s.store_id
+ORDER BY total_sales DESC;
+
+# 4. REPEAT CUSTOMERS
+SELECT 
+    o.customer_id,
+    COUNT(o.order_id) AS total_orders
+FROM orders o
+GROUP BY o.customer_id
+HAVING COUNT(o.order_id) > 1
+ORDER BY total_orders DESC;
+
+
+# 5. HIGHEST SPENDERS
+SELECT 
+    o.customer_id,
+    SUM(oi.quantity * oi.list_price) AS total_spent
+FROM orders o
+JOIN cleaned_order_items oi 
+ON o.order_id = oi.order_id
+GROUP BY o.customer_id
+ORDER BY total_spent DESC
+LIMIT 10;
+
+######### INVENTORY ANALYSIS ##############
+# 6. STORE-WISE INVENTORY
+SELECT 
+    st.store_id,
+    st.store_name,
+    SUM(s.quantity) AS total_stock
+FROM cleaned_stocks s
+JOIN cleaned_stores st ON s.store_id = st.store_id
+GROUP BY st.store_id, st.store_name
+ORDER BY total_stock DESC;
+
+#7. PRODUCT-WISE INVENTORY
+SELECT 
+    p.product_id,
+    p.product_name,
+    SUM(s.quantity) AS total_stock
+FROM cleaned_stocks s
+JOIN cleaned_products p ON s.product_id = p.product_id
+GROUP BY p.product_id, p.product_name
+ORDER BY total_stock DESC;
+
+#8. LOW STOCK PRODUCTS
+SELECT 
+    st.store_name,
+    p.product_name,
+    s.quantity
+FROM cleaned_stocks s
+JOIN cleaned_stores st ON s.store_id = st.store_id
+JOIN cleaned_products p ON s.product_id = p.product_id
+WHERE s.quantity < 5
+ORDER BY s.quantity ASC;
+
+#9. FULL INVENTORY VIEW (STORE + PRODUCTS)
+SELECT 
+    st.store_name,
+    p.product_name,
+    s.quantity
+FROM cleaned_stocks s
+JOIN cleaned_stores st ON s.store_id = st.store_id
+JOIN cleaned_products p ON s.product_id = p.product_id
+ORDER BY st.store_name, p.product_name;
+
+# 1. SALES VIEW
+# SALES SUMMARY VIEW
+CREATE VIEW sales_summary AS
+SELECT 
+    o.order_id,
+    o.customer_id,
+    o.store_id,
+    SUM(oi.quantity * oi.list_price) AS total_sales
+FROM orders o
+JOIN cleaned_order_items oi 
+ON o.order_id = oi.order_id
+GROUP BY o.order_id, o.customer_id, o.store_id;
+
+#  STORE SALES VIEW
+CREATE VIEW store_sales AS
+SELECT 
+    s.store_id,
+    s.store_name,
+    SUM(oi.quantity * oi.list_price) AS total_sales
+FROM orders o
+JOIN cleaned_order_items oi ON o.order_id = oi.order_id
+JOIN cleaned_stores s ON o.store_id = s.store_id
+GROUP BY s.store_id, s.store_name;
+
+#2. CUSTOMER VIEWS
+#REPEAT CUSTOMERS VIEW
+CREATE VIEW repeat_customers AS
+SELECT 
+    customer_id,
+    COUNT(order_id) AS total_orders
+FROM orders
+GROUP BY customer_id
+HAVING COUNT(order_id) > 1;
+
+#TOP CUSTOMERS VIEW
+CREATE VIEW top_customers AS
+SELECT 
+    o.customer_id,
+    SUM(oi.quantity * oi.list_price) AS total_spent
+FROM orders o
+JOIN cleaned_order_items oi 
+ON o.order_id = oi.order_id
+GROUP BY o.customer_id;
+
+# 3. PRODUCT VIEWS
+# TOP PRODUCTS VIEW
+CREATE VIEW top_products AS
+SELECT 
+    p.product_id,
+    p.product_name,
+    SUM(oi.quantity) AS total_units_sold
+FROM cleaned_order_items oi
+JOIN cleaned_products p 
+ON oi.product_id = p.product_id
+GROUP BY p.product_id, p.product_name;
+
+#4. INVENTORY VIEWS
+#STOCK SUMMARY VIEW
+CREATE VIEW stock_summary AS
+SELECT 
+    st.store_id,
+    st.store_name,
+    p.product_id,
+    p.product_name,
+    s.quantity
+FROM cleaned_stocks s
+JOIN cleaned_stores st ON s.store_id = st.store_id
+JOIN cleaned_products p ON s.product_id = p.product_id;
+
+#LOW STOCK VIEW
+CREATE VIEW low_stock_items AS
+SELECT 
+    st.store_name,
+    p.product_name,
+    s.quantity
+FROM cleaned_stocks s
+JOIN cleaned_stores st ON s.store_id = st.store_id
+JOIN cleaned_products p ON s.product_id = p.product_id
+WHERE s.quantity < 5;
